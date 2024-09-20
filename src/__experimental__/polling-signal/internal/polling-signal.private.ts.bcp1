@@ -1,0 +1,154 @@
+
+import {
+  defaultNotificationObserver,
+  IDefaultInNotificationsUnion,
+  IObservable,
+  IUnsubscribeOfObservable
+} from '@lirx/observable';
+import { SignalError, untracked } from '@lirx/signal';
+import {
+  COMPUTED_NODE, computedGet,
+  IComputedNode, initSignalNode,
+  initWatcherNode
+} from '@lirx/signal/private';
+import {
+  initComputedNode,
+  ISignalNode,
+  SIGNAL_NODE,
+  signalGet,
+  signalSet,
+  signalThrow
+} from '@lirx/signal/private';
+import { futureUnsubscribe } from '@lirx/unsubscribe';
+import { IEqualFunction } from '@lirx/utils';
+import { IPollingSignalReadFunction } from '../types/polling-signal-read-function.type.js';
+import { IPollingSignalWriteFunction } from '../types/polling-signal-write-function.type.js';
+
+
+
+/* TYPES */
+
+export interface IPollingSignalNode<GValue> extends IComputedNode<GValue> {
+  active: boolean;
+  read: IPollingSignalReadFunction<GValue>;
+  write: IPollingSignalWriteFunction<GValue>;
+  update$: IObservable<void>;
+  unsubscribe: IUnsubscribeOfObservable;
+}
+
+/* INIT */
+
+export const POLLING_SIGNAL_NODE: IPollingSignalNode<unknown> = {
+  ...COMPUTED_NODE,
+  active: false,
+  read: undefined as any,
+  write: undefined as any,
+  update$: undefined as any,
+  unsubscribe: undefined as any,
+};
+
+export function initPollingSignalNode<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+  equal: IEqualFunction<GValue> | undefined,
+  read: IPollingSignalReadFunction<GValue>,
+  write: IPollingSignalWriteFunction<GValue>,
+  update$: IObservable<void>,
+): void {
+  initComputedNode<GValue>(pollingSignalNode, (): GValue => {
+    return readPollingSignal(pollingSignalNode);
+  }, equal);
+  pollingSignalNode.read = read;
+  pollingSignalNode.write = write;
+  pollingSignalNode.update$ = update$;
+}
+
+/* FUNCTIONS */
+
+export function readPollingSignal<GValue>(pollingSignalNode: IPollingSignalNode<GValue>): GValue {
+  return untracked(pollingSignalNode.read);
+}
+
+export function writePollingSignal<GValue>(pollingSignalNode: IPollingSignalNode<GValue>, value: GValue): boolean {
+  return untracked((): void => {
+    if (pollingSignalNode.write(value)) {
+      valueSignal.set(read());
+    }
+  });
+}
+
+/* METHODS */
+
+export function pollingSignalGet<GValue>(node: IPollingSignalNode<GValue>): GValue {
+  return computedGet<GValue>(node);
+}
+
+export function pollingSignalIsActive<GValue>(
+  node: IPollingSignalNode<GValue>,
+): boolean {
+  return node.active;
+}
+
+export function pollingSignalActivateForRawValue<GValue>(
+  node: IPollingSignalNode<GValue>,
+): void {
+  node.unsubscribe = (node.value$ as IObservable<GValue>)((value: GValue): void => {
+    signalSet<GValue>(node, value);
+  });
+}
+
+export function pollingSignalActivateForNotification<GValue>(
+  node: IPollingSignalNode<GValue>,
+): void {
+  node.unsubscribe = futureUnsubscribe(
+    (unsubscribe: IUnsubscribeOfObservable): IUnsubscribeOfObservable => {
+      return (node.value$ as IObservable<IDefaultInNotificationsUnion<GValue>>)(
+        defaultNotificationObserver<GValue>(
+          /* next */ (value: GValue): void => {
+            signalSet<GValue>(node, value);
+          },
+          /* complete */ (): void => {
+            unsubscribe();
+          },
+          /* error */ (error: unknown): void => {
+            if (node.unsubscribeOnError) {
+              unsubscribe();
+            }
+            signalThrow<GValue>(node, error);
+          },
+        ),
+      );
+    },
+  );
+}
+
+export function pollingSignalDeactivate<GValue>(
+  node: IPollingSignalNode<GValue>,
+): void {
+  node.unsubscribe();
+}
+
+export function pollingSignalActivateOrDeactivateForRawValue<GValue>(
+  node: IPollingSignalNode<GValue>,
+  active: boolean = true,
+): void {
+  if (active !== node.active) {
+    if (active) {
+      pollingSignalActivateForRawValue(node);
+    } else {
+      pollingSignalDeactivate(node);
+    }
+  }
+}
+
+export function pollingSignalActivateOrDeactivateForNotification<GValue>(
+  node: IPollingSignalNode<GValue>,
+  active: boolean = true,
+): void {
+  if (active !== node.active) {
+    if (active) {
+      pollingSignalActivateForNotification(node);
+    } else {
+      pollingSignalDeactivate(node);
+    }
+  }
+}

@@ -1,0 +1,145 @@
+import { IUnsubscribe } from '@lirx/unsubscribe';
+import { IEqualFunction } from '@lirx/utils';
+import {
+  initSignalNode,
+  ISignalNodeWithReadonly,
+  notifySignalNodeWatchers,
+  readSignalNode,
+  runInWatcherContext,
+  SIGNAL_NODE_WITH_READONLY,
+  signalGet,
+  signalSet,
+  watchSignalNode,
+  writeSignalNode,
+} from '../../../internal/reactive-context.private.js';
+import { SignalError } from '../../../internal/signal-error.class.js';
+import { ISignalUpdateFunctionCallback } from '../../../signal/types/signal-update-function-callback.type.js';
+import { untracked } from '../../../untracked/untracked.js';
+import { IPollingSignalReadFunction } from '../types/polling-signal-read-function.type.js';
+import { IPollingSignalScheduleFunction } from '../types/polling-signal-schedule-function.type.js';
+import { IPollingSignalWriteFunction } from '../types/polling-signal-write-function.type.js';
+
+/* TYPES */
+
+export interface IPollingSignalNode<GValue> extends ISignalNodeWithReadonly<GValue> {
+  read: IPollingSignalReadFunction<GValue>;
+  write: IPollingSignalWriteFunction<GValue>;
+  schedule: IPollingSignalScheduleFunction;
+  unsubscribe: IUnsubscribe | undefined;
+}
+
+/* INIT */
+
+export const POLLING_SIGNAL_NODE: IPollingSignalNode<unknown> = {
+  ...SIGNAL_NODE_WITH_READONLY,
+  read: undefined as any,
+  write: undefined as any,
+  schedule: undefined as any,
+  unsubscribe: undefined as any,
+  update: updatePollingSignal as any,
+};
+
+export function initPollingSignalNode<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+  equal: IEqualFunction<GValue> | undefined,
+  read: IPollingSignalReadFunction<GValue>,
+  write: IPollingSignalWriteFunction<GValue>,
+  schedule: IPollingSignalScheduleFunction,
+): void {
+  initSignalNode<GValue>(pollingSignalNode, runInWatcherContext<GValue>(undefined, read), equal);
+  pollingSignalNode.read = read;
+  pollingSignalNode.write = write;
+  pollingSignalNode.schedule = schedule;
+}
+
+/* FUNCTIONS */
+
+export function clearPollingSignalScheduledUpdate<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+): void {
+  if (pollingSignalNode.unsubscribe !== undefined) {
+    pollingSignalNode.unsubscribe();
+    pollingSignalNode.unsubscribe = undefined;
+  }
+}
+
+export function updatePollingSignalUntilChanged<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+): void {
+  if (pollingSignalNode.unsubscribe === undefined) {
+    pollingSignalNode.unsubscribe = pollingSignalNode.schedule((): void => {
+      pollingSignalNode.unsubscribe = undefined;
+      if (!updatePollingSignal<GValue>(pollingSignalNode)) {
+        updatePollingSignalUntilChanged(pollingSignalNode);
+      }
+    });
+  }
+}
+
+export function updatePollingSignal<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+): boolean {
+  const currentValue: GValue | SignalError = pollingSignalNode.value;
+  let newValue: GValue | SignalError;
+  try {
+    newValue = runInWatcherContext<GValue>(undefined, pollingSignalNode.read);
+  } catch (error: unknown) {
+    newValue = new SignalError(error);
+  }
+  if (writeSignalNode<GValue>(pollingSignalNode, newValue)) {
+    notifySignalNodeWatchers<GValue>(pollingSignalNode, currentValue);
+    return true;
+  } else {
+    return false;
+  }
+}
+
+/* METHODS */
+
+// GET
+
+export function pollingSignalGet<GValue>(pollingSignalNode: IPollingSignalNode<GValue>): GValue {
+  updatePollingSignalUntilChanged<GValue>(pollingSignalNode);
+  updatePollingSignal<GValue>(pollingSignalNode);
+  watchSignalNode<GValue>(pollingSignalNode);
+  return readSignalNode<GValue>(pollingSignalNode);
+}
+
+// SET
+
+export function pollingSignalSet<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+  value: GValue | SignalError,
+): void {
+  if (value instanceof SignalError) {
+    throw new Error('Cannot throw this signal.');
+  } else {
+    if (pollingSignalNode.write(value) !== false) {
+      clearPollingSignalScheduledUpdate<GValue>(pollingSignalNode);
+      updatePollingSignal<GValue>(pollingSignalNode);
+    }
+  }
+}
+
+export function pollingSignalThrow<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+  error: unknown,
+): void {
+  signalSet<GValue>(pollingSignalNode, new SignalError(error));
+}
+
+export function pollingSignalUpdate<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+  updateFunction: ISignalUpdateFunctionCallback<GValue>,
+): void {
+  const currentValue: GValue = signalGet<GValue>(pollingSignalNode);
+  let value: GValue | SignalError;
+
+  try {
+    value = updateFunction(currentValue);
+  } catch (error: unknown) {
+    value = new SignalError(error);
+  }
+
+  pollingSignalSet<GValue>(pollingSignalNode, value);
+}

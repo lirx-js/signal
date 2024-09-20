@@ -1,0 +1,126 @@
+import {
+  defaultNotificationObserver,
+  IDefaultInNotificationsUnion,
+  IObservable,
+  IUnsubscribeOfObservable,
+} from '@lirx/observable';
+import { SignalError, untracked } from '@lirx/signal';
+import {
+  COMPUTED_NODE, COMPUTED_STATE, COMPUTED_STATE_PROP,
+  computedGet,
+  IComputedNode,
+  initComputedNode,
+  initSignalNode,
+  initWatcherNode,
+  ISignalNode,
+  SIGNAL_NODE,
+  signalGet,
+  signalSet,
+  signalThrow
+} from '@lirx/signal/private';
+import { futureUnsubscribe } from '@lirx/unsubscribe';
+import { IEqualFunction } from '@lirx/utils';
+import { IPollingSignalReadFunction } from '../types/polling-signal-read-function.type.js';
+import { IPollingSignalWriteFunction } from '../types/polling-signal-write-function.type.js';
+
+/* TYPES */
+
+export interface IPollingSignalNode<GValue> extends IComputedNode<GValue> {
+  active: boolean;
+  read: IPollingSignalReadFunction<GValue>;
+  write: IPollingSignalWriteFunction<GValue>;
+  update$: IObservable<void>;
+  unsubscribe: IUnsubscribeOfObservable;
+}
+
+/* INIT */
+
+export const POLLING_SIGNAL_NODE: IPollingSignalNode<unknown> = {
+  ...COMPUTED_NODE,
+  active: false,
+  read: undefined as any,
+  write: undefined as any,
+  update$: undefined as any,
+  unsubscribe: undefined as any,
+};
+
+export function initPollingSignalNode<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+  equal: IEqualFunction<GValue> | undefined,
+  read: IPollingSignalReadFunction<GValue>,
+  write: IPollingSignalWriteFunction<GValue>,
+  update$: IObservable<void>,
+): void {
+  initComputedNode<GValue>(
+    pollingSignalNode,
+    (): GValue => {
+      return readPollingSignal<GValue>(pollingSignalNode);
+    },
+    equal,
+  );
+  pollingSignalNode.read = read;
+  pollingSignalNode.write = write;
+  pollingSignalNode.update$ = update$;
+}
+
+/* FUNCTIONS */
+
+export function readPollingSignal<GValue>(pollingSignalNode: IPollingSignalNode<GValue>): GValue {
+  return untracked(pollingSignalNode.read);
+}
+
+export function writePollingSignal<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+  value: GValue,
+): void {
+  return untracked((): void => {
+    if (pollingSignalNode.write(value) !== false) {
+      pollingSignalNode[COMPUTED_STATE_PROP] = COMPUTED_STATE.OUTDATED;
+      pollingSignalNode.signals.push([signalNode, SignalError.UNSET]);
+    }
+  });
+}
+
+/* METHODS */
+
+export function pollingSignalGet<GValue>(pollingSignalNode: IPollingSignalNode<GValue>): GValue {
+  return computedGet<GValue>(pollingSignalNode);
+}
+
+export function pollingSignalSet<GValue>(
+  pollingSignalNode: IPollingSignalNode<GValue>,
+  value: GValue,
+): void {
+  untracked((): void => {
+    if (pollingSignalNode.write(value)) {
+      valueSignal.set(read());
+    }
+  });
+}
+
+export function pollingSignalIsActive<GValue>(node: IPollingSignalNode<GValue>): boolean {
+  return node.active;
+}
+
+export function pollingSignalActivate<GValue>(node: IPollingSignalNode<GValue>): void {
+  node.unsubscribe = (node.value$ as IObservable<GValue>)((value: GValue): void => {
+    signalSet<GValue>(node, value);
+  });
+}
+
+export function pollingSignalDeactivate<GValue>(node: IPollingSignalNode<GValue>): void {
+  node.unsubscribe();
+}
+
+export function pollingSignalActivateOrDeactivate<GValue>(
+  node: IPollingSignalNode<GValue>,
+  active: boolean = true,
+): void {
+  if (active !== node.active) {
+    if (active) {
+      pollingSignalActivate(node);
+    } else {
+      pollingSignalDeactivate(node);
+    }
+  }
+}

@@ -1,0 +1,50 @@
+import {
+  initSignalNode,
+  SIGNAL_NODE_WITH_READONLY,
+  signalAsReadonly,
+  signalGet,
+  SignalNodeWithReadonly,
+  signalSet,
+  signalThrow,
+  signalUpdate,
+} from '../internal/reactive-context.protected.js';
+import { SignalError } from '../internal/signal-error.js';
+
+import { SIGNAL } from './signal.symbol.js';
+import { CreateSignalOptions } from './types/create-signal-options.js';
+import { ReadonlySignal } from './types/readonly-signal.js';
+import { SignalUpdateFunctionCallback } from './types/signal-update-function-callback.js';
+import { Signal } from './types/signal.js';
+
+export function signal<GValue>(): Signal<GValue>;
+export function signal<GValue>(
+  initialValue: GValue | SignalError,
+  options?: CreateSignalOptions<GValue>,
+): Signal<GValue>;
+export function signal<GValue>(...args: any[]): Signal<GValue> {
+  // preventCreationIfInSignalContext();
+  let initialValue: GValue | SignalError;
+  let options: CreateSignalOptions<GValue> | undefined;
+
+  if (args.length === 0) {
+    initialValue = SignalError.UNSET;
+  } else {
+    initialValue = args[0];
+    options = args[1];
+  }
+
+  const node: SignalNodeWithReadonly<GValue> = Object.create(SIGNAL_NODE_WITH_READONLY);
+  initSignalNode<GValue>(node, initialValue, options?.equal);
+
+  const signal: Signal<GValue> = ((): GValue => signalGet<GValue>(node)) as Signal<GValue>;
+  signal[SIGNAL] = node;
+
+  signal.set = (value: GValue): void => signalSet<GValue>(node, value);
+  signal.throw = (error: unknown): void => signalThrow<GValue>(node, error);
+  signal.update = (updateFunction: SignalUpdateFunctionCallback<GValue>): void =>
+    signalUpdate<GValue>(node, updateFunction);
+  signal.asReadonly = (): ReadonlySignal<GValue> => signalAsReadonly<GValue>(node);
+
+  return signal;
+}
+
