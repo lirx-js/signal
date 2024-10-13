@@ -14,7 +14,7 @@ import {
   pollingSignalUpdate,
 } from './internal/polling-signal.protected.js';
 import { CreatePoolingSignalOptions } from './types/create-pooling-signal-options.type.js';
-import { PollingSignal } from './types/polling-signal.type.js';
+import { PollingSignal } from './types/polling-signal.js';
 
 export function pollingSignal<GValue>({
   equal,

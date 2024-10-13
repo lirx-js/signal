@@ -13,16 +13,16 @@ import {
 } from '../../../internal/reactive-context.protected.js';
 import { SignalError } from '../../../internal/signal-error.js';
 import { SignalUpdateFunctionCallback } from '../../../signal/types/signal-update-function-callback.js';
-import { IPollingSignalReadFunction } from '../types/polling-signal-read-function.type.js';
-import { IPollingSignalScheduleFunction } from '../types/polling-signal-schedule-function.type.js';
-import { IPollingSignalWriteFunction } from '../types/polling-signal-write-function.type.js';
+import { PollingSignalReadFunction } from '../types/polling-signal-read-function.js';
+import { PollingSignalScheduleFunction } from '../types/polling-signal-schedule-function.js';
+import { PollingSignalWriteFunction } from '../types/polling-signal-write-function.js';
 
 /* TYPES */
 
 export interface PollingSignalNode<GValue> extends SignalNodeWithReadonly<GValue> {
-  read: IPollingSignalReadFunction<GValue>;
-  write: IPollingSignalWriteFunction<GValue>;
-  schedule: IPollingSignalScheduleFunction;
+  read: PollingSignalReadFunction<GValue>;
+  write: PollingSignalWriteFunction<GValue>;
+  schedule: PollingSignalScheduleFunction;
   unsubscribe: UndoFunction | undefined;
 }
 
@@ -40,9 +40,9 @@ export const POLLING_SIGNAL_NODE: PollingSignalNode<unknown> = {
 export function initPollingSignalNode<GValue>(
   pollingSignalNode: PollingSignalNode<GValue>,
   equal: EqualFunction<GValue> | undefined,
-  read: IPollingSignalReadFunction<GValue>,
-  write: IPollingSignalWriteFunction<GValue>,
-  schedule: IPollingSignalScheduleFunction,
+  read: PollingSignalReadFunction<GValue>,
+  write: PollingSignalWriteFunction<GValue>,
+  schedule: PollingSignalScheduleFunction,
 ): void {
   initSignalNode<GValue>(pollingSignalNode, runInWatcherContext<GValue>(undefined, read), equal);
   pollingSignalNode.read = read;

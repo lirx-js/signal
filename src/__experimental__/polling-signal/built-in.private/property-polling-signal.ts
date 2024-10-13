@@ -1,6 +1,6 @@
 import { pollingSignal } from '../polling-signal.js';
 import { CreatePoolingSignalOptions } from '../types/create-pooling-signal-options.type.js';
-import { PollingSignal } from '../types/polling-signal.type.js';
+import { PollingSignal } from '../types/polling-signal.js';
 
 export interface ICreatePropertyPollingSignalOptions<
   GObject extends object,

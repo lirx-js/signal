@@ -9,4 +9,6 @@ export interface SignalConstructor {
   ): Signal<GValue>;
 
   unset<GValue>(options?: CreateSignalOptions<GValue>): Signal<GValue>;
+
+  thrown<GValue>(error: unknown, options?: CreateSignalOptions<GValue>): Signal<GValue>;
 }

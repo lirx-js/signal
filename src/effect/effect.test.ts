@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { testTools } from '../../fabrique/test/tools';
+import { testTools } from '../../fabrique/test/tools.js';
 import { computed } from '../computed/computed.js';
 import { signal } from '../signal/signal.js';
 import { effect } from './effect.js';

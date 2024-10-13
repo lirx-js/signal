@@ -1,146 +1,119 @@
 import { EqualFunction, UndoFunction } from '@lirx/utils';
 import {
   initSignalNode,
-  isInWatcherContext,
-  notifySignalNodeWatchers,
-  readSignalNode,
-  runInWatcherContext,
   SIGNAL_NODE_WITH_READONLY,
   signalGet,
   SignalNodeWithReadonly,
-  watchSignalNode,
-  writeSignalNode,
+  signalSet,
+  signalThrow,
+  signalUpdate,
 } from '../../../internal/reactive-context.protected.js';
 import { SignalError } from '../../../internal/signal-error.js';
+import { ReadonlySignal } from '../../../signal/types/readonly-signal.js';
 import { SignalUpdateFunctionCallback } from '../../../signal/types/signal-update-function-callback.js';
+import { UnsubscribeOfWatch } from '../../../watch/types/unsubscribe-of-watch.js';
+import { watch } from '../../../watch/watch.js';
+import { SignalLockedError } from '../errors/signal-locked-error.js';
 
 /* TYPES */
 
 export interface LockableSignalNode<GValue> extends SignalNodeWithReadonly<GValue> {
-  read: ILockableSignalReadFunction<GValue>;
-  write: ILockableSignalWriteFunction<GValue>;
-  schedule: ILockableSignalScheduleFunction;
-  unsubscribe: UndoFunction | undefined;
+  lockedWith: ReadonlySignal<GValue> | undefined;
+  lockedMessage: string | undefined;
 }
 
 /* INIT */
 
-export const POLLING_SIGNAL_NODE: LockableSignalNode<unknown> = {
+export const LOCKABLE_SIGNAL_NODE: LockableSignalNode<unknown> = {
   ...SIGNAL_NODE_WITH_READONLY,
-  read: undefined as any,
-  write: undefined as any,
-  schedule: undefined as any,
-  unsubscribe: undefined as any,
-  update: updateLockableSignal as any,
+  lockedWith: undefined as any,
+  lockedMessage: undefined as any,
 };
 
 export function initLockableSignalNode<GValue>(
-  pollingSignalNode: LockableSignalNode<GValue>,
+  lockableSignalNode: LockableSignalNode<GValue>,
+  value: GValue | SignalError,
   equal: EqualFunction<GValue> | undefined,
-  read: ILockableSignalReadFunction<GValue>,
-  write: ILockableSignalWriteFunction<GValue>,
-  schedule: ILockableSignalScheduleFunction,
 ): void {
-  initSignalNode<GValue>(pollingSignalNode, runInWatcherContext<GValue>(undefined, read), equal);
-  pollingSignalNode.read = read;
-  pollingSignalNode.write = write;
-  pollingSignalNode.schedule = schedule;
+  initSignalNode<GValue>(lockableSignalNode, value, equal);
 }
 
 /* FUNCTIONS */
-
-export function readLockableSignal<GValue>(pollingSignalNode: LockableSignalNode<GValue>): boolean {
-  const currentValue: GValue | SignalError = pollingSignalNode.value;
-  let newValue: GValue | SignalError;
-  try {
-    newValue = runInWatcherContext<GValue>(undefined, pollingSignalNode.read);
-  } catch (error: unknown) {
-    newValue = new SignalError(error);
-  }
-
-  if (writeSignalNode<GValue>(pollingSignalNode, newValue)) {
-    notifySignalNodeWatchers<GValue>(pollingSignalNode, currentValue);
-    return true;
-  } else {
-    return false;
-  }
-}
-
-export function watchLockableSignalUntilChangedOrUnobserved<GValue>(
-  pollingSignalNode: LockableSignalNode<GValue>,
-): void {
-  if (pollingSignalNode.unsubscribe === undefined) {
-    pollingSignalNode.unsubscribe = pollingSignalNode.schedule((): void => {
-      pollingSignalNode.unsubscribe = undefined;
-      if (pollingSignalNode.watchers.length > 0 && !readLockableSignal<GValue>(pollingSignalNode)) {
-        watchLockableSignalUntilChangedOrUnobserved(pollingSignalNode);
-      }
-    });
-  }
-}
-
-export function updateLockableSignal<GValue>(pollingSignalNode: LockableSignalNode<GValue>): void {
-  readLockableSignal<GValue>(pollingSignalNode);
-  watchLockableSignalUntilChangedOrUnobserved<GValue>(pollingSignalNode);
-}
-
-export function clearLockableSignalScheduledUpdate<GValue>(
-  pollingSignalNode: LockableSignalNode<GValue>,
-): void {
-  if (pollingSignalNode.unsubscribe !== undefined) {
-    pollingSignalNode.unsubscribe();
-    pollingSignalNode.unsubscribe = undefined;
-  }
-}
 
 /* METHODS */
 
 // GET
 
-export function pollingSignalGet<GValue>(pollingSignalNode: LockableSignalNode<GValue>): GValue {
-  readLockableSignal<GValue>(pollingSignalNode);
-  if (isInWatcherContext()) {
-    watchLockableSignalUntilChangedOrUnobserved<GValue>(pollingSignalNode);
-  }
-  watchSignalNode<GValue>(pollingSignalNode);
-  return readSignalNode<GValue>(pollingSignalNode);
+export function lockableSignalGet<GValue>(lockableSignalNode: LockableSignalNode<GValue>): GValue {
+  return signalGet<GValue>(lockableSignalNode);
 }
 
 // SET
 
-export function pollingSignalSet<GValue>(
-  pollingSignalNode: LockableSignalNode<GValue>,
+export function lockableSignalSet<GValue>(
+  lockableSignalNode: LockableSignalNode<GValue>,
   value: GValue | SignalError,
 ): void {
-  if (value instanceof SignalError) {
-    throw new Error('Cannot throw this signal.');
+  if (lockableSignalNode.lockedWith === undefined) {
+    signalSet<GValue>(lockableSignalNode, value);
   } else {
-    if (pollingSignalNode.write(value) !== false) {
-      clearLockableSignalScheduledUpdate<GValue>(pollingSignalNode);
-      readLockableSignal<GValue>(pollingSignalNode);
-    }
+    throw new SignalLockedError(lockableSignalNode.lockedMessage);
   }
 }
 
-export function pollingSignalThrow<GValue>(
-  pollingSignalNode: LockableSignalNode<GValue>,
+export function lockableSignalThrow<GValue>(
+  lockableSignalNode: LockableSignalNode<GValue>,
   error: unknown,
 ): void {
-  pollingSignalSet<GValue>(pollingSignalNode, new SignalError(error));
+  if (lockableSignalNode.lockedWith === undefined) {
+    signalThrow<GValue>(lockableSignalNode, error);
+  } else {
+    throw new SignalLockedError(lockableSignalNode.lockedMessage);
+  }
 }
 
-export function pollingSignalUpdate<GValue>(
-  pollingSignalNode: LockableSignalNode<GValue>,
+export function lockableSignalUpdate<GValue>(
+  lockableSignalNode: LockableSignalNode<GValue>,
   updateFunction: SignalUpdateFunctionCallback<GValue>,
 ): void {
-  const currentValue: GValue = signalGet<GValue>(pollingSignalNode);
-  let value: GValue | SignalError;
-
-  try {
-    value = updateFunction(currentValue);
-  } catch (error: unknown) {
-    value = new SignalError(error);
+  if (lockableSignalNode.lockedWith === undefined) {
+    signalUpdate<GValue>(lockableSignalNode, updateFunction);
+  } else {
+    throw new SignalLockedError(lockableSignalNode.lockedMessage);
   }
+}
 
-  pollingSignalSet<GValue>(pollingSignalNode, value);
+export function lockableSignalLocked(lockableSignalNode: LockableSignalNode<any>): boolean {
+  return lockableSignalNode.lockedWith !== undefined;
+}
+
+export function lockableSignalLockWith<GValue>(
+  lockableSignalNode: LockableSignalNode<GValue>,
+  signal: ReadonlySignal<GValue>,
+  message?: string,
+): UndoFunction {
+  if (lockableSignalNode.lockedWith === undefined) {
+    lockableSignalNode.lockedWith = signal;
+    lockableSignalNode.lockedMessage = message;
+
+    let locked: boolean = true;
+
+    const unsubscribeOfWatch: UnsubscribeOfWatch = watch<GValue>(
+      signal,
+      (value: GValue | SignalError): void => {
+        signalSet<GValue>(lockableSignalNode, value);
+      },
+    );
+
+    return () => {
+      if (locked) {
+        locked = false;
+        unsubscribeOfWatch();
+        lockableSignalNode.lockedWith = undefined;
+        lockableSignalNode.lockedMessage = undefined;
+      }
+    };
+  } else {
+    throw new SignalLockedError();
+  }
 }

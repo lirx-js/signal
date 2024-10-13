@@ -1,8 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import { computed } from '../computed/computed.js';
-import { SignalError } from '../internal/signal-error';
+import { SignalError } from '../internal/signal-error.js';
 import { signal } from '../signal/signal.js';
-import { WatchCleanUpFunction } from './types/watch-clean-up-function';
+import { WatchCleanUpFunction } from './types/watch-clean-up-function.js';
 import { watch } from './watch.js';
 
 describe('watch', (): void => {

@@ -1,5 +1,4 @@
 import { describe, expect, it } from '@jest/globals';
-import { SignalError } from '../internal/signal-error.js';
 import { signal } from './signal.js';
 
 describe('signal', () => {
@@ -16,7 +15,7 @@ describe('signal', () => {
 
     it('should throw if errored initial value', () => {
       const error = new Error();
-      const a = signal(new SignalError(error));
+      const a = signal.thrown(error);
       expect(() => a()).toThrow(error);
     });
   });

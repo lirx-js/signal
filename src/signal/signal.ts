@@ -41,3 +41,7 @@ export const signal: SignalConstructor = (<GValue>(
 signal.unset = <GValue>(options?: CreateSignalOptions<GValue>): Signal<GValue> => {
   return signal<GValue>(SignalError.UNSET, options);
 };
+
+signal.thrown = <GValue>(error: unknown, options?: CreateSignalOptions<GValue>): Signal<GValue> => {
+  return signal<GValue>(new SignalError(error), options);
+};
